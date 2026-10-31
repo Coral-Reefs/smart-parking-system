@@ -2,7 +2,7 @@
 
 An interactive, browser-based smart-parking MVP for a fictional mall, **Grand Galleria Level B1**. The simulation walks through the complete driver journey: plate lookup, automatic bay assignment with conflict avoidance, illuminated floor-strip guidance, and a drive-to-park animation.
 
-> **Status:** stabilization phase. The simulation at `/` is fully functional; the marketing landing page described in [docs/README.md](docs/README.md) is planned but not implemented yet.
+> **Status:** core simulation is fully functional. The marketing landing page described in [docs/README.md](docs/README.md) is planned but not implemented yet.
 
 ## Overview
 
@@ -14,7 +14,7 @@ The app is a single-page React + TypeScript simulation. It starts with a waiting
 - **Assign a bay automatically.** The closest available spot (by walking distance to the mall lobby) is selected.
 - **Test the conflict rule.** Tap an occupied bay, or use **Test Rule: Spot Taken**, to simulate a rival car taking the assigned spot. The app re-routes to the next closest free bay and explains why.
 - **Follow the floor light strips.** The map renders the assigned bay, the current route, and animated teal/purple guidance strips.
-- **Drive and park.** Start, pause, or fast-forward the drive, complete parking, release the bay, or reset for the next car.
+- **Drive and park.** Start or pause the drive, complete parking instantly, release the bay, or reset for the next car.
 - **Track capacity.** Live totals show parked, assigned, and available bays on the floor.
 
 ## Tech Stack
@@ -58,10 +58,11 @@ bun run dev
 
 Open <http://localhost:3000>. The dev server is bound to `0.0.0.0` so it can also be reached from another device on the network.
 
-### Verify the build
+### Verify the project
 
 ```bash
 bun run lint   # TypeScript type-check (tsc --noEmit)
+bun run test   # Vitest unit tests
 bun run build  # Production bundle into dist/
 bun run preview
 ```
@@ -69,8 +70,21 @@ bun run preview
 ### Other scripts
 
 ```bash
-bun run clean  # Remove the dist/ build output
+bun run test:watch  # Re-run tests on change
+bun run clean       # Remove the dist/ build output
 ```
+
+## Testing
+
+Allocation and rerouting are implemented as pure functions in [`src/hooks/useParkingSimulation.ts`](src/hooks/useParkingSimulation.ts) so they can be tested without rendering React. The suite in [`src/hooks/useParkingSimulation.test.ts`](src/hooks/useParkingSimulation.test.ts) covers:
+
+- nearest-free-bay allocation;
+- preferred-bay assignment;
+- fallback when a preferred bay is occupied or missing;
+- releasing a previous provisional assignment;
+- full-floor handling;
+- contention rerouting, including a completely full floor;
+- input immutability.
 
 ## Project Structure
 
@@ -87,14 +101,18 @@ bun run clean  # Remove the dist/ build output
 │   │   └── SpotAssignmentPanel.tsx      # Plate lookup and assignment
 │   ├── data/
 │   │   └── sampleRecords.ts       # Bay layout and sample customers
-│   ├── App.tsx                    # Simulation state and page layout
+│   ├── hooks/
+│   │   ├── useParkingSimulation.ts        # State machine + pure algorithms
+│   │   └── useParkingSimulation.test.ts   # Vitest unit tests
+│   ├── App.tsx                    # Page layout and composition
 │   ├── index.css                  # Tailwind entry and custom animations
 │   ├── main.tsx                   # React root
 │   └── types.ts                   # Shared domain types
 ├── index.html
 ├── package.json
 ├── tsconfig.json
-└── vite.config.ts
+├── vite.config.ts
+└── vitest.config.ts
 ```
 
 ## Roadmap
@@ -105,6 +123,7 @@ Planned improvements, tracked in [docs/README.md](docs/README.md):
 - [ ] Add smooth scrolling with [Lenis](https://github.com/darkroomengineering/lenis).
 - [ ] Add scroll-reveal animations with [AOS](https://michalsnik.github.io/aos/).
 - [ ] Keep the simulation reachable from the landing page as the primary call to action.
+- [ ] Change car simulation to use wheresryan22 anatomy skills.
 
 ## Notes
 

@@ -1,299 +1,39 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { ParkingSpot, CustomerRecord } from './types';
-import { SAMPLE_CUSTOMERS, INITIAL_PARKING_SPOTS } from './data/sampleRecords';
+import { useState } from 'react';
+import { useParkingSimulation } from './hooks/useParkingSimulation';
 import { ParkingFloorMap } from './components/ParkingFloorMap';
 import { SpotAssignmentPanel } from './components/SpotAssignmentPanel';
 import { FloorLightStripGuidance } from './components/FloorLightStripGuidance';
 import { DriveAndParkController } from './components/DriveAndParkController';
 import { SampleCustomersList } from './components/SampleCustomersList';
-import { Car, ShieldCheck, Compass, Sparkles, Users, RefreshCw, AlertCircle, Info } from 'lucide-react';
+import { Car, Sparkles, Users, Info } from 'lucide-react';
 
 export default function App() {
-  // Parking spots state
-  const [spots, setSpots] = useState<ParkingSpot[]>(INITIAL_PARKING_SPOTS);
-  // Sample customer records
-  const [customers, setCustomers] = useState<CustomerRecord[]>(SAMPLE_CUSTOMERS);
-
-  // Active shopper simulation state
-  const [currentPlate, setCurrentPlate] = useState<string>('LBN 6203');
-  const [currentCarModel, setCurrentCarModel] = useState<string>('Nissan X-Trail (Emerald Green)');
-  const [assignedSpot, setAssignedSpot] = useState<ParkingSpot | null>(null);
-
-  // Driving & parking progress
-  const [drivingProgress, setDrivingProgress] = useState<number>(0);
-  const [isDriving, setIsDriving] = useState<boolean>(false);
-  const [isParked, setIsParked] = useState<boolean>(false);
-
-  // Rule notice: "if it is full or already taken, then suggest the next free one"
-  const [rerouteNotice, setRerouteNotice] = useState<string | null>(null);
+  const {
+    spots,
+    customers,
+    currentPlate,
+    currentCarModel,
+    assignedSpot,
+    drivingProgress,
+    isDriving,
+    isParked,
+    rerouteNotice,
+    availableCount,
+    totalCount,
+    setCurrentPlate,
+    setCurrentCarModel,
+    assignSpot,
+    simulateContention,
+    startDrive,
+    pauseDrive,
+    completePark,
+    releaseSpot,
+    resetForNextCar,
+    selectCustomer,
+  } = useParkingSimulation();
 
   // Modal for customer sample records
   const [isRecordsModalOpen, setIsRecordsModalOpen] = useState<boolean>(false);
-
-  // Animation frame reference for smooth driving simulation
-  const driveIntervalRef = useRef<number | null>(null);
-
-  // Initial auto-assignment for the waiting shopper
-  useEffect(() => {
-    handleAssignSpot();
-  }, []);
-
-  // Compute available and total spots
-  const availableSpots = spots.filter((s) => s.status === 'available');
-  const availableCount = availableSpots.length;
-  const totalCount = spots.length;
-
-  /**
-   * FEATURE 1: Assign a parking spot
-   * Rule: if it is full or already taken, then suggest the next free one.
-   */
-  const handleAssignSpot = (preferredSpotId?: string) => {
-    setRerouteNotice(null);
-
-    // If customer already had an assigned spot that wasn't yet parked, revert it to available
-    let currentSpots = [...spots];
-    if (assignedSpot && !isParked) {
-      currentSpots = currentSpots.map((s) =>
-        s.id === assignedSpot.id && s.status === 'assigned' ? { ...s, status: 'available' } : s
-      );
-    }
-
-    const freeSpots = currentSpots
-      .filter((s) => s.status === 'available')
-      .sort((a, b) => a.distanceMeters - b.distanceMeters);
-
-    if (freeSpots.length === 0) {
-      setRerouteNotice('Level B1 is full. Suggesting closest parking zone on Level B2.');
-      setAssignedSpot(null);
-      return;
-    }
-
-    let targetSpot: ParkingSpot | undefined;
-
-    if (preferredSpotId) {
-      const preferred = currentSpots.find((s) => s.id === preferredSpotId);
-      if (preferred && preferred.status === 'available') {
-        targetSpot = preferred;
-      } else {
-        // Preferred is already taken or full -> Suggest next free one
-        targetSpot = freeSpots[0];
-        setRerouteNotice(
-          `Requested Bay ${preferredSpotId} is already taken. Suggested closest free alternative: Bay ${targetSpot.id} (${targetSpot.distanceMeters}m to Lifts).`
-        );
-      }
-    } else {
-      // Automatic optimal allocation: closest to mall entrance & lifts
-      targetSpot = freeSpots[0];
-    }
-
-    if (targetSpot) {
-      // Mark as assigned in spots array
-      const updatedSpots = currentSpots.map((s) =>
-        s.id === targetSpot!.id ? { ...s, status: 'assigned' as const } : s
-      );
-
-      setSpots(updatedSpots);
-      setAssignedSpot(targetSpot);
-      setDrivingProgress(0);
-      setIsDriving(false);
-      setIsParked(false);
-    }
-  };
-
-  /**
-   * Contention Simulation (Explicitly demonstrates the prompt's rule):
-   * "Rule: if it is full or already taken, then suggest the next free one."
-   */
-  const handleSimulateContention = () => {
-    if (!assignedSpot || isParked) return;
-
-    const oldSpotId = assignedSpot.id;
-    const rivalPlate = 'RIV ' + Math.floor(1000 + Math.random() * 9000);
-
-    // Another car takes the current spot!
-    const updatedSpots = spots.map((s) => {
-      if (s.id === oldSpotId) {
-        return {
-          ...s,
-          status: 'occupied' as const,
-          occupiedByPlate: rivalPlate,
-          carModel: 'Walk-in Shopper',
-        };
-      }
-      return s;
-    });
-
-    // Find the next free one
-    const remainingFree = updatedSpots
-      .filter((s) => s.status === 'available')
-      .sort((a, b) => a.distanceMeters - b.distanceMeters);
-
-    if (remainingFree.length > 0) {
-      const nextFree = remainingFree[0];
-      const finalSpots = updatedSpots.map((s) =>
-        s.id === nextFree.id ? { ...s, status: 'assigned' as const } : s
-      );
-
-      setSpots(finalSpots);
-      setAssignedSpot(nextFree);
-      setDrivingProgress(0);
-      setIsDriving(false);
-      setRerouteNotice(
-        `Bay ${oldSpotId} was just taken by ${rivalPlate}. Smart light strips dynamically rerouted to next free spot: Bay ${nextFree.id} (${nextFree.distanceMeters}m to Lifts)!`
-      );
-    } else {
-      setSpots(updatedSpots);
-      setAssignedSpot(null);
-      setRerouteNotice(`Bay ${oldSpotId} was taken and Level B1 is now completely full.`);
-    }
-  };
-
-  /**
-   * FEATURE 3: Customers drive to assigned spot and park
-   */
-  const handleStartDrive = () => {
-    if (!assignedSpot || isParked) return;
-    setIsDriving(true);
-  };
-
-  const handlePauseDrive = () => {
-    setIsDriving(false);
-    if (driveIntervalRef.current) {
-      clearInterval(driveIntervalRef.current);
-      driveIntervalRef.current = null;
-    }
-  };
-
-  // Smooth driving animation loop
-  useEffect(() => {
-    if (isDriving) {
-      driveIntervalRef.current = window.setInterval(() => {
-        setDrivingProgress((prev) => {
-          if (prev >= 100) {
-            handleCompletePark();
-            return 100;
-          }
-          return prev + 2.5; // reaches spot in ~3.5 seconds
-        });
-      }, 80);
-    } else if (driveIntervalRef.current) {
-      clearInterval(driveIntervalRef.current);
-      driveIntervalRef.current = null;
-    }
-
-    return () => {
-      if (driveIntervalRef.current) clearInterval(driveIntervalRef.current);
-    };
-  }, [isDriving, assignedSpot]);
-
-  /**
-   * Park vehicle and mark spot as TAKEN
-   */
-  const handleCompletePark = () => {
-    if (!assignedSpot) return;
-
-    if (driveIntervalRef.current) {
-      clearInterval(driveIntervalRef.current);
-      driveIntervalRef.current = null;
-    }
-
-    setIsDriving(false);
-    setDrivingProgress(100);
-    setIsParked(true);
-
-    // Update spot to 'occupied' (marked as taken)
-    setSpots((prev) =>
-      prev.map((s) =>
-        s.id === assignedSpot.id
-          ? {
-              ...s,
-              status: 'occupied',
-              occupiedByPlate: currentPlate,
-              carModel: currentCarModel,
-            }
-          : s
-      )
-    );
-
-    // Also mark customer status as parked in customer records
-    setCustomers((prev) =>
-      prev.map((c) =>
-        c.plate === currentPlate
-          ? { ...c, initialStatus: 'parked', assignedSpotId: assignedSpot.id }
-          : c
-      )
-    );
-  };
-
-  /**
-   * Free up a spot (e.g. shopper finished shopping and leaves mall)
-   */
-  const handleReleaseSpot = (spotId: string) => {
-    setSpots((prev) =>
-      prev.map((s) =>
-        s.id === spotId ? { ...s, status: 'available', occupiedByPlate: null, carModel: undefined } : s
-      )
-    );
-    if (assignedSpot?.id === spotId) {
-      setAssignedSpot(null);
-      setIsParked(false);
-      setDrivingProgress(0);
-    }
-  };
-
-  /**
-   * Reset to simulate next arriving customer
-   */
-  const handleResetForNextCar = () => {
-    // Pick next unparked customer or random from sample list
-    const unparked = customers.filter(
-      (c) => c.initialStatus === 'waiting' && c.plate !== currentPlate
-    );
-    const nextCust =
-      unparked.length > 0
-        ? unparked[0]
-        : {
-            plate: 'K' + Math.floor(100 + Math.random() * 900) + ' ' + Math.floor(1000 + Math.random() * 9000),
-            carModel: 'Shopper Vehicle',
-            carColor: '#38bdf8',
-            initialStatus: 'waiting' as const,
-            timestamp: 'Just now',
-          };
-
-    setCurrentPlate(nextCust.plate);
-    setCurrentCarModel(nextCust.carModel);
-    setAssignedSpot(null);
-    setDrivingProgress(0);
-    setIsDriving(false);
-    setIsParked(false);
-    setRerouteNotice(null);
-
-    // Trigger auto-assign for this new car after state updates
-    setTimeout(() => {
-      handleAssignSpot();
-    }, 100);
-  };
-
-  /**
-   * Select a customer record from the 15 pre-filled records
-   */
-  const handleSelectCustomer = (customer: CustomerRecord) => {
-    setCurrentPlate(customer.plate);
-    setCurrentCarModel(customer.carModel);
-    const existingSpot = spots.find((s) => s.occupiedByPlate === customer.plate);
-    if (existingSpot) {
-      setAssignedSpot(existingSpot);
-      setIsParked(true);
-      setDrivingProgress(100);
-      setIsDriving(false);
-      setRerouteNotice(`Vehicle ${customer.plate} is already parked in Bay ${existingSpot.id}.`);
-    } else {
-      setIsParked(false);
-      setDrivingProgress(0);
-      setIsDriving(false);
-      handleAssignSpot();
-    }
-  };
 
   return (
     <div className="min-h-screen bg-[#070a12] text-slate-100 flex flex-col font-sans">
@@ -383,16 +123,7 @@ export default function App() {
               isDriving={isDriving}
               isParked={isParked}
               currentPlate={currentPlate}
-              onSelectSpot={(spot) => {
-                if (spot.status === 'occupied') {
-                  setRerouteNotice(
-                    `Bay ${spot.id} is already taken by ${spot.occupiedByPlate || 'another customer'}. Rule applied: Suggesting closest free bay!`
-                  );
-                  handleAssignSpot();
-                } else {
-                  handleAssignSpot(spot.id);
-                }
-              }}
+              onSelectSpot={(spot) => assignSpot(spot.id)}
             />
 
             {/* Quick Helper Note for Evaluator */}
@@ -403,7 +134,7 @@ export default function App() {
               </span>
               <button
                 type="button"
-                onClick={handleSimulateContention}
+                onClick={simulateContention}
                 disabled={!assignedSpot || isParked}
                 className="text-amber-400 hover:text-amber-300 transition-colors font-medium underline shrink-0"
               >
@@ -422,8 +153,8 @@ export default function App() {
                 currentCarModel={currentCarModel}
                 setCurrentCarModel={setCurrentCarModel}
                 assignedSpot={assignedSpot}
-                onAssignSpot={handleAssignSpot}
-                onSimulateContention={handleSimulateContention}
+                onAssignSpot={assignSpot}
+                onSimulateContention={simulateContention}
                 sampleCustomers={customers}
                 isDriving={isDriving}
                 isParked={isParked}
@@ -452,11 +183,11 @@ export default function App() {
                 isDriving={isDriving}
                 drivingProgress={drivingProgress}
                 isParked={isParked}
-                onStartDrive={handleStartDrive}
-                onPauseDrive={handlePauseDrive}
-                onCompletePark={handleCompletePark}
-                onResetForNextCar={handleResetForNextCar}
-                onReleaseSpot={handleReleaseSpot}
+                onStartDrive={startDrive}
+                onPauseDrive={pauseDrive}
+                onCompletePark={completePark}
+                onResetForNextCar={resetForNextCar}
+                onReleaseSpot={releaseSpot}
               />
             </div>
           </div>
@@ -469,15 +200,15 @@ export default function App() {
         onClose={() => setIsRecordsModalOpen(false)}
         customers={customers}
         spots={spots}
-        onSelectCustomer={handleSelectCustomer}
+        onSelectCustomer={selectCustomer}
       />
 
       {/* Quiet, clean footer */}
       <footer className="mt-auto border-t border-slate-900 bg-[#05070d] py-4 px-6 text-center text-xs text-slate-500">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
-          <span>Smart Parking System MVP · Grand Galleria Mall Level B1</span>
+          <span>Brilly Park MVP · Project simulation</span>
           <span className="font-mono text-[11px] text-slate-600">
-            Optical ANPR & Dynamic Floor LED Guidance
+            Parking System simulation
           </span>
         </div>
       </footer>
