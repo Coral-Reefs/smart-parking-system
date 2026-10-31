@@ -1,0 +1,6 @@
+{
+  "name": "Smart Parking System",
+  "description": "Smart mall parking MVP simulation: scan car plates, auto-assign bays with conflict avoidance, illuminate floor light strip directions, and simulate driving to park.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
